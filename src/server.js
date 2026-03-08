@@ -76,7 +76,7 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/scores", async (req, res) => {
   const game = (req.query.game || "").toString();
   
-  console.log(`[INFO] - GET called for: ${game}`)
+  console.warn(`[INFO] - GET called for: ${game}`)
   if (!game) return res.status(400).json({ error: "Missing ?game=" });
 
   try {
@@ -112,7 +112,7 @@ app.post("/scores", async (req, res) => {
     if (!name || score === null || score === undefined || !game) {
       return res.status(400).json({ error: "Missing name/score/game in payload" });
     }
-    console.log(`[INFO] - POST called for: ${game}`)
+    console.warn(`[INFO] - POST called for: ${game}`)
     const scoreNum = Number(score);
     if (!Number.isFinite(scoreNum)) {
       return res.status(400).json({ error: "score must be a number" });
