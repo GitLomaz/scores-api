@@ -112,7 +112,7 @@ app.post("/scores", async (req, res) => {
     if (!name || score === null || score === undefined || !game) {
       return res.status(400).json({ error: "Missing name/score/game in payload" });
     }
-    console.log(`[INFO] - SUBMISSION called for: ${game}`)
+    console.log(`[INFO] - POST called for: ${game}`)
     const scoreNum = Number(score);
     if (!Number.isFinite(scoreNum)) {
       return res.status(400).json({ error: "score must be a number" });
@@ -163,6 +163,10 @@ app.post("/scores", async (req, res) => {
     console.error(err);
     return res.status(500).json({ error: "Server error" });
   }
+});
+
+app.all('*', (req, res) => {
+  res.sendStatus(204);
 });
 
 app.listen(PORT, "0.0.0.0", () => {
