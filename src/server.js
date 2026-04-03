@@ -14,7 +14,11 @@ const mysql = require("mysql2/promise");
 
 const app = express();
 
-// ---- CORS (open, no credentials) ----
+app.use((req, res, next) => {
+  res.set("X-Robots-Tag", "noindex");
+  next();
+});
+
 app.use(
   cors({
     origin: "*",
@@ -24,37 +28,48 @@ app.use(
 );
 app.options(/.*/, cors());
 
-// ---- Body parsing ----
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-// ---- DB config via env ----
 const DB_HOST = process.env.DB_HOST;
 const DB_USER = process.env.DB_USER;
 const DB_PASS = process.env.DB_PASS || "";
 const DB_NAME = process.env.DB_NAME;
+const INSTANCE_CONNECTION_NAME = process.env.INSTANCE_CONNECTION_NAME;
 
-if (!DB_HOST || !DB_USER || !DB_NAME) {
-  console.error("Missing DB env vars. Need DB_HOST, DB_USER, DB_PASS, DB_NAME.");
+if (!DB_USER || !DB_NAME) {
+  console.error("Missing DB env vars. Need DB_USER, DB_PASS, DB_NAME.");
   process.exit(1);
 }
 
 const PORT = Number(process.env.PORT || 8080);
 
 let pool;
+
 async function getPool() {
   if (pool) return pool;
 
-  pool = mysql.createPool({
-    host: DB_HOST,
+  const config = {
     user: DB_USER,
     password: DB_PASS,
     database: DB_NAME,
     waitForConnections: true,
-    connectionLimit: 10,
+    connectionLimit: 5,
     queueLimit: 0,
-  });
+  };
 
+  if (INSTANCE_CONNECTION_NAME) {
+    config.socketPath = `/cloudsql/${INSTANCE_CONNECTION_NAME}`;
+    console.log(`Using Cloud SQL socket: ${config.socketPath}`);
+  } else if (DB_HOST) {
+    config.host = DB_HOST;
+    console.log(`Using DB host: ${DB_HOST}`);
+  } else {
+    console.error("Need either INSTANCE_CONNECTION_NAME or DB_HOST.");
+    process.exit(1);
+  }
+
+  pool = mysql.createPool(config);
   return pool;
 }
 
