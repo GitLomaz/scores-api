@@ -10,7 +10,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
-const mysql = require("mysql2/promise");
+const { Pool } = require("pg");
 
 const app = express();
 
@@ -31,45 +31,25 @@ app.options(/.*/, cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-const DB_HOST = process.env.DB_HOST;
-const DB_USER = process.env.DB_USER;
-const DB_PASS = process.env.DB_PASS || "";
-const DB_NAME = process.env.DB_NAME;
-const INSTANCE_CONNECTION_NAME = process.env.INSTANCE_CONNECTION_NAME;
+const DATABASE_URL = process.env.DATABASE_URL;
 
-if (!DB_USER || !DB_NAME) {
-  console.error("Missing DB env vars. Need DB_USER, DB_PASS, DB_NAME.");
+if (!DATABASE_URL) {
+  console.error("Missing DATABASE_URL environment variable.");
   process.exit(1);
 }
 
 const PORT = Number(process.env.PORT || 8080);
 
-let pool;
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  max: 5,
+});
+
+pool.on("error", (err) => {
+  console.error("Unexpected error on idle client", err);
+});
 
 async function getPool() {
-  if (pool) return pool;
-
-  const config = {
-    user: DB_USER,
-    password: DB_PASS,
-    database: DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 5,
-    queueLimit: 0,
-  };
-
-  if (INSTANCE_CONNECTION_NAME) {
-    config.socketPath = `/cloudsql/${INSTANCE_CONNECTION_NAME}`;
-    console.log(`Using Cloud SQL socket: ${config.socketPath}`);
-  } else if (DB_HOST) {
-    config.host = DB_HOST;
-    console.log(`Using DB host: ${DB_HOST}`);
-  } else {
-    console.error("Need either INSTANCE_CONNECTION_NAME or DB_HOST.");
-    process.exit(1);
-  }
-
-  pool = mysql.createPool(config);
   return pool;
 }
 
@@ -79,11 +59,11 @@ function safeBase64JsonDecode(b64) {
 }
 
 async function fetchTopScores(conn, game) {
-  const [rows] = await conn.execute(
-    "SELECT name, score FROM score WHERE game = ? ORDER BY score DESC LIMIT 10",
+  const result = await conn.query(
+    "SELECT name, score FROM score WHERE game = $1 ORDER BY score DESC LIMIT 10",
     [game]
   );
-  return rows.map((r) => ({ name: r.name, score: Number(r.score) }));
+  return result.rows.map((r) => ({ name: r.name, score: Number(r.score) }));
 }
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -96,7 +76,7 @@ app.get("/scores", async (req, res) => {
 
   try {
     const p = await getPool();
-    const conn = await p.getConnection();
+    const conn = await p.connect();
     try {
       const scores = await fetchTopScores(conn, game);
       return res.json({ scores, query: "nope!" });
@@ -134,17 +114,17 @@ app.post("/scores", async (req, res) => {
     }
 
     const p = await getPool();
-    const conn = await p.getConnection();
+    const conn = await p.connect();
 
     try {
-      const [existing] = await conn.execute(
-        "SELECT 1 FROM score WHERE name = ? AND score = ? AND game = ? LIMIT 1",
+      const result = await conn.query(
+        "SELECT 1 FROM score WHERE name = $1 AND score = $2 AND game = $3 LIMIT 1",
         [name, scoreNum, game]
       );
 
-      if (!existing || existing.length === 0) {
-        query = "INSERT INTO score (name, score, game) values (?, ?, ?)";
-        await conn.execute(query, [name, scoreNum, game]);
+      if (!result.rows || result.rows.length === 0) {
+        query = "INSERT INTO score (name, score, game) values ($1, $2, $3)";
+        await conn.query(query, [name, scoreNum, game]);
       }
 
       const scores = await fetchTopScores(conn, game);
@@ -160,11 +140,11 @@ app.post("/scores", async (req, res) => {
       const response = { scores, query };
 
       if (searchScore) {
-        const [posRows] = await conn.execute(
-          "SELECT COUNT(*) AS c FROM score WHERE game = ? AND score > ?",
+        const posResult = await conn.query(
+          "SELECT COUNT(*) AS c FROM score WHERE game = $1 AND score > $2",
           [game, scoreNum]
         );
-        const position = Number(posRows?.[0]?.c ?? 0);
+        const position = Number(posResult.rows?.[0]?.c ?? 0);
         response.position = position;
         response.name = String(name);
         response.score = String(scoreNum);
