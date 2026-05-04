@@ -63,7 +63,6 @@ async function fetchTopScores(conn, game) {
     "SELECT name, score FROM score WHERE game = $1 ORDER BY score DESC LIMIT 10",
     [game]
   );
-  console.log(JSON.stringify(result.rows));
   return result.rows.map((r) => ({ name: r.name, score: Number(r.score) }));
 }
 
