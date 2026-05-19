@@ -160,6 +160,55 @@ app.post("/scores", async (req, res) => {
   }
 });
 
+app.post("/statistic", async (req, res) => {
+  try {
+    // Get IP address from request
+    const ipAddress = req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'unknown';
+    
+    // Get the payload data
+    const data = req.body;
+    
+    if (!data || Object.keys(data).length === 0) {
+      return res.status(400).json({ error: "Missing payload data" });
+    }
+
+    console.warn(`[INFO] - POST /statistic called from IP: ${ipAddress}`);
+
+    const p = await getPool();
+    const conn = await p.connect();
+
+    try {
+      // Extract game from payload (default to "0" if missing)
+      const game = (data?.game ?? "0").toString();
+
+      // Upsert: insert or update based on ip_address + game
+      const query = `
+        INSERT INTO statistic (ip_address, game, updated_at, data)
+        VALUES ($1, $2, NOW(), $3)
+        ON CONFLICT (ip_address, game)
+        DO UPDATE SET
+          updated_at = NOW(),
+          data = $3
+        RETURNING *
+      `;
+
+      const result = await conn.query(query, [ipAddress, game, JSON.stringify(data)]);
+
+      return res.json({
+        success: true,
+        ip_address: ipAddress,
+        game: game,
+        record: result.rows[0]
+      });
+    } finally {
+      conn.release();
+    }
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
 app.all('*', (req, res) => {
   res.sendStatus(204);
 });
