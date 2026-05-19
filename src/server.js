@@ -164,6 +164,7 @@ app.post("/statistic", async (req, res) => {
   try {
     // Get IP address from request
     const ipAddress = req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'unknown';
+    console.log('IP Gathered: ' + ipAddress);
     
     // Get the payload data
     const data = req.body;
