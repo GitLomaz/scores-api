@@ -13,6 +13,9 @@ const cors = require("cors");
 const { Pool } = require("pg");
 
 const app = express();
+// When running behind a proxy (Cloud Run, load balancers), trust the proxy
+// so `req.ip` and other proxy-aware properties reflect the original client.
+app.set('trust proxy', true);
 
 app.use((req, res, next) => {
   res.set("X-Robots-Tag", "noindex");
@@ -64,6 +67,20 @@ async function fetchTopScores(conn, game) {
     [game]
   );
   return result.rows.map((r) => ({ name: r.name, score: Number(r.score) }));
+}
+
+// Helper to reliably extract the client's IP address. Prefer X-Forwarded-For
+// (first entry) when present; fall back to Express's `req.ip` or the socket.
+function getClientIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  if (xff && typeof xff === 'string' && xff.trim().length > 0) {
+    return xff.split(',')[0].trim();
+  }
+  let ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  if (typeof ip === 'string' && ip.startsWith('::ffff:')) {
+    ip = ip.replace('::ffff:', '');
+  }
+  return ip;
 }
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -163,7 +180,7 @@ app.post("/scores", async (req, res) => {
 app.post("/statistic", async (req, res) => {
   try {
     // Get IP address from request
-    const ipAddress = req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'unknown';
+    const ipAddress = getClientIp(req);
     console.log('IP Gathered: ' + ipAddress);
     
     // Get the payload data
