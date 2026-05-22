@@ -177,6 +177,50 @@ app.post("/scores", async (req, res) => {
   }
 });
 
+app.get("/statistic", async (req, res) => {
+  try {
+    // Get IP address from request
+    const ipAddress = getClientIp(req);
+    
+    // Get game from query string
+    const game = (req.query.game || "0").toString();
+
+    console.warn(`[INFO] - GET /statistic called from IP: ${ipAddress} for game: ${game}`);
+
+    const p = await getPool();
+    const conn = await p.connect();
+
+    try {
+      const query = `
+        SELECT * FROM statistic
+        WHERE ip_address = $1 AND game = $2
+      `;
+
+      const result = await conn.query(query, [ipAddress, game]);
+
+      if (!result.rows || result.rows.length === 0) {
+        return res.status(404).json({ 
+          error: "No statistics found for this IP and game",
+          ip_address: ipAddress,
+          game: game
+        });
+      }
+
+      return res.json({
+        success: true,
+        ip_address: ipAddress,
+        game: game,
+        record: result.rows[0]
+      });
+    } finally {
+      conn.release();
+    }
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
 app.post("/statistic", async (req, res) => {
   try {
     // Get IP address from request
